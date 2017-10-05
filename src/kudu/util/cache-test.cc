@@ -27,9 +27,17 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_string(cfile_do_on_finish);
+
 #if defined(__linux__)
+#define NVM_CACHE_ENABLED
+#endif
+
+#if defined(NVM_CACHE_ENABLED)
 DECLARE_string(nvm_cache_path);
-#endif // defined(__linux__)
+DECLARE_bool(nvm_cache_persistent);
+DECLARE_bool(nvm_cache_simulate_allocation_failure);
+#endif
 
 namespace kudu {
 
@@ -64,25 +72,34 @@ class CacheTest : public KuduTest,
 
   virtual void SetUp() OVERRIDE {
 
-#if defined(__linux__)
+#if defined(NVM_CACHE_ENABLED)
     if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
       FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }
-#endif // defined(__linux__)
+#endif // defined(NVM_CACHE_ENABLED)
 
+    switch (GetParam()) {
+       case DRAM_CACHE:
+          break;
+#if defined(NVM_CACHE_ENABLED)
+       case NVM_CACHE:
+          FLAGS_nvm_cache_persistent = false;
+          break;
+      case NVM_CACHE_PERSISTENT:
+          break;
+#endif
+      default:
+        LOG(FATAL) << "Unknown block cache type: " << GetParam();
+    }
     cache_.reset(NewLRUCache(GetParam(), kCacheSize, "cache_test"));
-
     MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_);
-    // Since nvm cache does not have memtracker due to the use of
-    // tcmalloc for this we only check for it in the DRAM case.
     if (GetParam() == DRAM_CACHE) {
       ASSERT_TRUE(mem_tracker_.get());
-    }
-
-    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
+		}
+		scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
         &metric_registry_, "test");
-    cache_->SetMetrics(entity);
+		cache_->SetMetrics(entity);
   }
 
   int Lookup(int key) {
@@ -108,11 +125,13 @@ class CacheTest : public KuduTest,
   }
 };
 
-#if defined(__linux__)
-INSTANTIATE_TEST_CASE_P(CacheTypes, CacheTest, ::testing::Values(DRAM_CACHE, NVM_CACHE));
+#if defined(NVM_CACHE_ENABLED)
+INSTANTIATE_TEST_CASE_P(CacheTypes, CacheTest,
+                        ::testing::Values(DRAM_CACHE, NVM_CACHE,
+                        NVM_CACHE_PERSISTENT));
 #else
 INSTANTIATE_TEST_CASE_P(CacheTypes, CacheTest, ::testing::Values(DRAM_CACHE));
-#endif // defined(__linux__)
+#endif // defined(NVM_CACHE_ENABLED)
 
 TEST_P(CacheTest, TrackMemory) {
   if (mem_tracker_) {

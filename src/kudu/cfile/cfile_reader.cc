@@ -82,6 +82,7 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+using kudu::cfile::BlockCache;
 
 namespace kudu {
 namespace cfile {
@@ -515,7 +516,6 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
     // scratch buffer. Instead, we have to start holding onto our decompression
     // output buffer.
     scratch.Swap(&decompressed_scratch);
-
     // Set the result block to our decompressed data.
     block = Slice(buf, uncompressed_size);
   } else {

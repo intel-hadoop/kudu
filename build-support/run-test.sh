@@ -111,6 +111,10 @@ export TSAN_OPTIONS
 LSAN_OPTIONS="$LSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/lsan-suppressions.txt"
 export LSAN_OPTIONS
 
+# Configure PMEM_IS_PMEM_FORCE. This is set to force the fast path
+# when running the pmem tests.
+export PMEM_IS_PMEM_FORCE=1
+
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
 # a deadlock or anything.

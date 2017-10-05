@@ -319,6 +319,8 @@ Cache::Handle* LRUCache::Insert(LRUHandle* e, Cache::EvictionCallback *eviction_
   // Set the remaining LRUHandle members which were not already allocated during
   // Allocate().
   e->eviction_callback = eviction_callback;
+// The key data was copied into a buffer as part of the initial
+// key/value allocation.
   e->refs = 2;  // One from LRUCache, one for the returned handle
   mem_tracker_->Consume(e->charge);
   if (PREDICT_TRUE(metrics_)) {
@@ -467,8 +469,8 @@ class ShardedLRUCache : public Cache {
     }
   }
 
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
-    int key_len = key.size();
+  virtual PendingHandle* Allocate(Slice key, size_t val_len, int charge) OVERRIDE {
+    size_t key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
     int key_len_padded = KUDU_ALIGN_UP(key_len, sizeof(void*));
@@ -486,6 +488,8 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<PendingHandle*>(handle);
   }
 
+  // We have allocated the memory contiguously so the key.data() pointer
+  // is the starting address of the location we need to free.
   virtual void Free(PendingHandle* h) OVERRIDE {
     uint8_t* data = reinterpret_cast<uint8_t*>(h);
     delete [] data;
@@ -494,7 +498,6 @@ class ShardedLRUCache : public Cache {
   virtual uint8_t* MutableValue(PendingHandle* h) OVERRIDE {
     return reinterpret_cast<LRUHandle*>(h)->mutable_val_ptr();
   }
-
 };
 
 }  // end anonymous namespace
@@ -505,7 +508,8 @@ Cache* NewLRUCache(CacheType type, size_t capacity, const string& id) {
       return new ShardedLRUCache(capacity, id);
 #if !defined(__APPLE__)
     case NVM_CACHE:
-      return NewLRUNvmCache(capacity, id);
+    case NVM_CACHE_PERSISTENT:
+        return NewLRUNvmCache(capacity);
 #endif
     default:
       LOG(FATAL) << "Unsupported LRU cache type: " << type;

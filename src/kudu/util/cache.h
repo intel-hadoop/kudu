@@ -34,7 +34,8 @@ class MetricEntity;
 
 enum CacheType {
   DRAM_CACHE,
-  NVM_CACHE
+  NVM_CACHE,
+  NVM_CACHE_PERSISTENT // Is equal to NVM + nvm_cache_persistent.
 };
 
 // Create a new cache with a fixed size capacity.  This implementation
@@ -177,7 +178,7 @@ class Cache {
   //
   // NOTE: the returned memory is not automatically freed by the cache: the
   // caller must either free it using Free(), or insert it using Insert().
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) = 0;
+  virtual PendingHandle* Allocate(Slice key, size_t val_len, int charge) = 0;
 
   virtual uint8_t* MutableValue(PendingHandle* handle) = 0;
 

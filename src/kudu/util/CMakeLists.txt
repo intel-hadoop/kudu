@@ -231,6 +231,8 @@ if(NOT APPLE)
     breakpad_client
     dl
     rt
+    pmem
+    pmemobj
     vmem)
 endif()
 
@@ -269,6 +271,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_util_compression
 #######################################
 
 # Used by mini-cluster, so must be built even when NO_TESTS=0.
+if(NOT NO_TESTS)
 add_library(kudu_test_util
   test_util.cc)
 target_link_libraries(kudu_test_util
@@ -276,10 +279,6 @@ target_link_libraries(kudu_test_util
   glog
   gmock
   kudu_util)
-
-if(NOT APPLE)
-  target_link_libraries(kudu_test_util
-    vmem)
 endif()
 
 #######################################
@@ -301,19 +300,24 @@ target_link_libraries(kudu_curl_util
 if(NOT NO_TESTS)
   add_library(kudu_test_main
     test_main.cc)
-  target_link_libraries(kudu_test_main
-    ${KRB5_REALM_OVERRIDE}
-    gflags
-    glog
-    gmock
-    kudu_util
-    kudu_test_util)
+target_link_libraries(kudu_test_main
+  ${KRB5_REALM_OVERRIDE}
+  gflags
+  glog
+  gmock
+  kudu_util
+  kudu_test_util
+  dl
+  pmem
+  pmemobj
+  rt
+  vmem)
 
-  if(NOT APPLE)
-    target_link_libraries(kudu_test_main
-      dl
-      rt)
-  endif()
+if(NOT APPLE)
+  target_link_libraries(kudu_test_main
+    dl
+    rt)
+    endif()
 endif()
 
 #######################################
@@ -368,6 +372,7 @@ ADD_KUDU_TEST(mt-metrics-test RUN_SERIAL true)
 ADD_KUDU_TEST(mt-threadlocal-test RUN_SERIAL true)
 ADD_KUDU_TEST(net/dns_resolver-test)
 ADD_KUDU_TEST(net/net_util-test)
+ADD_KUDU_TEST(nvm_cache-test)
 ADD_KUDU_TEST(object_pool-test)
 ADD_KUDU_TEST(oid_generator-test)
 ADD_KUDU_TEST(once-test)

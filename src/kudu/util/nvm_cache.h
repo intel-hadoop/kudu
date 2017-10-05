@@ -23,8 +23,9 @@
 namespace kudu {
 class Cache;
 
+
 // Create a cache in persistent memory with the given capacity.
-Cache* NewLRUNvmCache(size_t capacity, const std::string& id);
+Cache* NewLRUNvmCache(size_t capacity);
 
 }  // namespace kudu
 

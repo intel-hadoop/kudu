@@ -44,6 +44,7 @@ namespace cfile {
 
 class BlockCacheHandle;
 
+
 // Wrapper around kudu::Cache specifically for caching blocks of CFiles.
 // Provides a singleton and LRU cache for CFile blocks.
 class BlockCache {
@@ -116,6 +117,7 @@ class BlockCache {
   static BlockCache *GetSingleton() {
     return Singleton<BlockCache>::get();
   }
+
 
   explicit BlockCache(size_t capacity);
 
