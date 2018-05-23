@@ -523,8 +523,8 @@ Source: http://savannah.nongnu.org/projects/libunwind/
   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --------------------------------------------------------------------------------
-thirdparty/nvml-*/: BSD 3-clause license
-Source: https://github.com/pmem/nvml
+thirdparty/memkind-*/: BSD 3-clause license
+Source: https://github.com/memkind/memkind
 
   Copyright (c) 2014-2015, Intel Corporation
 
@@ -565,7 +565,7 @@ Source: https://github.com/pmem/nvml
 
   * utils/cstyle (used only during development) licensed under CDDL.
 
-nvml bundles jemalloc which is licensed under the BSD 2-clause license:
+memkind bundles jemalloc which is licensed under the BSD 2-clause license:
 
   Copyright (C) 2002-2014 Jason Evans <jasone@canonware.com>.
   All rights reserved.

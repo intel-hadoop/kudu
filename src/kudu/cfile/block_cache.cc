@@ -51,7 +51,7 @@ DEFINE_string(block_cache_type, "DRAM",
               "Which type of block cache to use for caching data. "
               "Valid choices are 'DRAM' or 'NVM'. DRAM, the default, "
               "caches data in regular memory. 'NVM' caches data "
-              "in a memory-mapped file using the NVML library.");
+              "in a memory-mapped file using the MEMKIND library.");
 TAG_FLAG(block_cache_type, experimental);
 
 using strings::Substitute;

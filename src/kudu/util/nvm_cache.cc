@@ -30,7 +30,8 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <libvmem.h>
+#include <memkind.h>
+#include <memkind/internal/memkind_pmem.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/atomic_refcount.h"
@@ -194,7 +195,7 @@ class HandleTable {
 // A single shard of sharded cache.
 class NvmLRUCache {
  public:
-  explicit NvmLRUCache(VMEM *vmp);
+  explicit NvmLRUCache(memkind *vmp);
   ~NvmLRUCache();
 
   // Separate from constructor so caller can easily make an array of LRUCache
@@ -242,12 +243,12 @@ class NvmLRUCache {
 
   HandleTable table_;
 
-  VMEM* vmp_;
+  memkind* vmp_;
 
   CacheMetrics* metrics_;
 };
 
-NvmLRUCache::NvmLRUCache(VMEM* vmp)
+NvmLRUCache::NvmLRUCache(memkind* vmp)
   : usage_(0),
   vmp_(vmp),
   metrics_(NULL) {
@@ -271,7 +272,7 @@ void* NvmLRUCache::VmemMalloc(size_t size) {
   if (PREDICT_FALSE(FLAGS_nvm_cache_simulate_allocation_failure)) {
     return NULL;
   }
-  return vmem_malloc(vmp_, size);
+  return memkind_malloc(vmp_, size);
 }
 
 bool NvmLRUCache::Unref(LRUHandle* e) {
@@ -288,7 +289,7 @@ void NvmLRUCache::FreeEntry(LRUHandle* e) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
   }
-  vmem_free(vmp_, e);
+  memkind_free(vmp_, e);
 }
 
 // Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
@@ -463,7 +464,7 @@ class ShardedLRUCache : public Cache {
  private:
   gscoped_ptr<CacheMetrics> metrics_;
   vector<NvmLRUCache*> shards_;
-  VMEM* vmp_;
+  memkind* vmp_;
 
   static inline uint32_t HashSlice(const Slice& s) {
     return util_hash::CityHash64(
@@ -475,7 +476,7 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, VMEM* vmp)
+  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, memkind* vmp)
         : vmp_(vmp) {
 
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
@@ -490,8 +491,8 @@ class ShardedLRUCache : public Cache {
     STLDeleteElements(&shards_);
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
-    // VMEM pool.
-    vmem_delete(vmp_);
+    // MEMKIND pool.
+    memkind_pmem_destroy(vmp_);
   }
 
   virtual Handle* Insert(PendingHandle* handle,
@@ -541,8 +542,8 @@ class ShardedLRUCache : public Cache {
         handle->kv_data = &buf[sizeof(LRUHandle)];
         handle->val_length = val_len;
         handle->key_length = key_len;
-        handle->charge = (charge == kAutomaticCharge) ?
-            vmem_malloc_usable_size(vmp_, buf) : charge;
+        // FIXME: MEMKIND API does not support the functionality as vmem_malloc_usable_size in NVML
+	handle->charge = charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
         return reinterpret_cast<PendingHandle*>(handle);
@@ -553,7 +554,7 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual void Free(PendingHandle* ph) OVERRIDE {
-    vmem_free(vmp_, ph);
+    memkind_free(vmp_, ph);
   }
 };
 
@@ -562,13 +563,14 @@ class ShardedLRUCache : public Cache {
 Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
   // vmem_create() will fail if the capacity is too small, but with
   // an inscrutable error. So, we'll check ourselves.
-  CHECK_GE(capacity, VMEM_MIN_POOL)
+  CHECK_GE(capacity, MEMKIND_PMEM_MIN_SIZE)
     << "configured capacity " << capacity << " bytes is less than "
-    << "the minimum capacity for an NVM cache: " << VMEM_MIN_POOL;
-
-  VMEM* vmp = vmem_create(FLAGS_nvm_cache_path.c_str(), capacity);
+    << "the minimum capacity for an NVM cache: " << MEMKIND_PMEM_MIN_SIZE;
+  
+  memkind* vmp;
+  int err = memkind_create_pmem(FLAGS_nvm_cache_path.c_str(), capacity, &vmp);
   // If we cannot create the cache pool we should not retry.
-  PLOG_IF(FATAL, vmp == NULL) << "Could not initialize NVM cache library in path "
+  PLOG_IF(FATAL, err) << "Could not initialize NVM cache library in path "
                               << FLAGS_nvm_cache_path.c_str();
 
   return new ShardedLRUCache(capacity, id, vmp);
