@@ -720,32 +720,36 @@ build_trace_viewer() {
 build_memkind() {
   MEMKIND_BDIR=$TP_BUILD_DIR/$MEMKIND_NAME$MODE_SUFFIX
   mkdir -p $MEMKIND_BDIR
+  mkdir -p $PREFIX/include/jemalloc
   pushd $MEMKIND_BDIR
 
   # It doesn't appear possible to isolate source and build directories, so just
   # prepopulate the latter using the former.
   rsync -av --delete $MEMKIND_SOURCE/ .
   cd $MEMKIND_SOURCE
-  ./build.sh  
+  ./build.sh "--prefix=$PREFIX" 
 
-  CFLAGS="$EXTRA_CFLAGS" \
-    CXXFLAGS="$EXTRA_CXXFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS" \
-    LIBS="$EXTRA_LIBS" \
-    $MEMKIND_SOURCE/configure \
-    --prefix=$PREFIX
-  
-  LIB=libmemkind
-  EXTRA_CFLAGS="$EXTRA_CFLAGS -Wno-error" \
-   EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-rpath,$PREFIX/lib" \
-    make -j$PARALLEL $EXTRA_MAKEFLAGS DEBUG=0
-
+#  CFLAGS="$EXTRA_CFLAGS" \
+#    CXXFLAGS="$EXTRA_CXXFLAGS" \
+#    LDFLAGS="$EXTRA_LDFLAGS" \
+#    LIBS="$EXTRA_LIBS" \
+#    $MEMKIND_SOURCE/configure \
+#    --prefix=$PREFIX
+#  
+#  EXTRA_CFLAGS="$EXTRA_CFLAGS -Wno-error" \
+#   EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-rpath,$PREFIX/lib" \
+#    make -j$PARALLEL $EXTRA_MAKEFLAGS DEBUG=0
+#
+#  make install
   # MEMKIND doesn't allow configuring PREFIX -- it always installs into
   # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
   # the MEMKIND libraries, even though we only need the three libraries above.
   # So, we manually install the built artifacts.
+  LIB=libmemkind
   cp -a $MEMKIND_BDIR/include/memkind.h $PREFIX/include
   cp -a $MEMKIND_BDIR/.libs/$LIB.{so*,a} $PREFIX/lib
+  cp $MEMKIND_SOURCE/jemalloc/obj/include/jemalloc/jemalloc.h $PREFIX/include/jemalloc
+
   popd
 }
 
