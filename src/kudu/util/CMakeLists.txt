@@ -233,7 +233,7 @@ if(NOT APPLE)
     breakpad_client
     dl
     rt
-    vmem)
+    memkind)
 endif()
 
 # We use MallocExtension, but not in the exported version of the library.
@@ -281,7 +281,7 @@ target_link_libraries(kudu_test_util
 
 if(NOT APPLE)
   target_link_libraries(kudu_test_util
-    vmem)
+    memkind)
 endif()
 
 #######################################

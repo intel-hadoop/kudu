@@ -15,40 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# - Find Required PMEM libraries (libvmem, libpmem, libpmemobj)
+# - Find Required MEMKIND libraries
 # This module defines
-#  PMEM_INCLUDE_DIR, directory containing headers
+#  MEMKIND_INCLUDE_DIR, directory containing headers
 #  XXX_STATIC_LIBS, path to *.a
 #  XXX_SHARED_LIBS, path to *.so shared library
-#  PMEM_FOUND, whether PMEM libraries have been found
-#  PMEMOBJ_DEPS, dependencies required for using libpmemobj
 
-find_path(PMEM_INCLUDE_DIR libpmem.h
+find_path(MEMKIND_INCLUDE_DIR memkind.h
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(VMEM_SHARED_LIB vmem
+find_library(MEMKIND_SHARED_LIB memkind
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(VMEM_STATIC_LIB libvmem.a
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEM_SHARED_LIB pmem
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEM_STATIC_LIB libpmem.a
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEMOBJ_SHARED_LIB pmemobj
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEMOBJ_STATIC_LIB libpmemobj.a
+find_library(MEMKIND_STATIC_LIB libmemkind.a
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(PMEM REQUIRED_VARS
-  VMEM_SHARED_LIB VMEM_STATIC_LIB
-  PMEM_SHARED_LIB PMEM_STATIC_LIB
-  PMEMOBJ_SHARED_LIB PMEMOBJ_STATIC_LIB
-  PMEM_INCLUDE_DIR
-)
+find_package_handle_standard_args(MEMKIND REQUIRED_VARS
+  MEMKIND_SHARED_LIB MEMKIND_STATIC_LIB  MEMKIND_INCLUDE_DIR)

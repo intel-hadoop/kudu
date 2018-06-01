@@ -80,6 +80,8 @@ file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" KUDU_VERSION_NUMBER)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)
 
+# [yuqiang]
+set(CMAKE_VERBOSE_MAKEFILE ON) 
 set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build-support)
 set(THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 set(THIRDPARTY_INSTALL_DIR ${THIRDPARTY_DIR}/installed)
@@ -446,6 +448,12 @@ endif()
 #
 # Any additional arguments are passed verbatim into the C++ compiler invocation.
 function(GET_GOLD_VERSION)
+
+  # disable ld.gold due some compilation issue for numa
+  if (NUMA_LIB_PATH)
+    return()
+  endif()
+
   # The gold linker is only for ELF binaries, which macOS doesn't use.
   if (APPLE)
     return()
@@ -1139,18 +1147,23 @@ endif()
 
 # Required pmem libraries
 if (NOT APPLE)
-find_package(Pmem REQUIRED)
-include_directories(${PMEM_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(vmem
-  STATIC_LIB "${VMEM_STATIC_LIB}"
-  SHARED_LIB "${VMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmem
-  STATIC_LIB "${PMEM_STATIC_LIB}"
-  SHARED_LIB "${PMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmemobj
-  STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
-  SHARED_LIB "${PMEMOBJ_SHARED_LIB}"
-  DEPS ${PMEMOBJ_DEPS})
+  find_package(Memkind REQUIRED)
+  include_directories(SYSTEM ${MEMKIND_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(memkind
+    STATIC_LIB "${MEMKIND_STATIC_LIB}"
+    SHARED_LIB "${MEMKIND_SHARED_LIB}")
+  list(APPEND KUDU_BASE_LIBS memkind)
+endif()
+
+## libnuma
+if (NOT APPLE)
+  find_library(NUMA_LIB_PATH numa)
+  if(NOT NUMA_LIB_PATH)
+    message(FATAL_ERROR "Could not find libnuma on the system path")
+  endif()
+  ADD_THIRDPARTY_LIB(numa
+    SHARED_LIB "${NUMA_LIB_PATH}")
+  list(APPEND KUDU_BASE_LIBS numa)
 endif()
 
 ## curl
@@ -1449,3 +1462,4 @@ add_subdirectory(src/kudu/tablet)
 add_subdirectory(src/kudu/tools)
 add_subdirectory(src/kudu/tserver)
 add_subdirectory(src/kudu/util)
+

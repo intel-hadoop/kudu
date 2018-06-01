@@ -721,6 +721,7 @@ build_memkind() {
   MEMKIND_BDIR=$TP_BUILD_DIR/$MEMKIND_NAME$MODE_SUFFIX
   mkdir -p $MEMKIND_BDIR
   mkdir -p $PREFIX/include/jemalloc
+  mkdir -p $PREFIX/include/memkind/internal
   pushd $MEMKIND_BDIR
 
   # It doesn't appear possible to isolate source and build directories, so just
@@ -745,11 +746,10 @@ build_memkind() {
   # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
   # the MEMKIND libraries, even though we only need the three libraries above.
   # So, we manually install the built artifacts.
-  LIB=libmemkind
-  cp -a $MEMKIND_BDIR/include/memkind.h $PREFIX/include
-  cp -a $MEMKIND_BDIR/.libs/$LIB.{so*,a} $PREFIX/lib
   cp $MEMKIND_SOURCE/jemalloc/obj/include/jemalloc/jemalloc.h $PREFIX/include/jemalloc
-
+  cp $MEMKIND_BDIR/include/memkind/internal/* $PREFIX/include/memkind/internal
+  cp $MEMKIND_BDIR/include/memkind.h $PREFIX/include
+  cp $MEMKIND_BDIR/.libs/* $PREFIX/lib
   popd
 }
 
