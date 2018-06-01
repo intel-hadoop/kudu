@@ -31,6 +31,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <memkind.h>
+#include <memkind/internal/memkind_pmem.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/atomic_refcount.h"
@@ -490,8 +491,8 @@ class ShardedLRUCache : public Cache {
     STLDeleteElements(&shards_);
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
-    // MEMKIND pool. However the following API is experimental API
-    // memkind_pmem_destroy(vmp_);
+    // MEMKIND pool.
+     memkind_pmem_destroy(vmp_);
   }
 
   virtual Handle* Insert(PendingHandle* handle,
@@ -562,9 +563,9 @@ class ShardedLRUCache : public Cache {
 Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
   // vmem_create() will fail if the capacity is too small, but with
   // an inscrutable error. So, we'll check ourselves.
-  CHECK_GE(capacity, KUDU_PMEM_MIN_SIZE)
+  CHECK_GE(capacity, MEMKIND_PMEM_MIN_SIZE)
     << "configured capacity " << capacity << " bytes is less than "
-    << "the minimum capacity for an NVM cache: " << KUDU_PMEM_MIN_SIZE;
+    << "the minimum capacity for an NVM cache: " << MEMKIND_PMEM_MIN_SIZE;
   
   memkind* vmp;
   int err = memkind_create_pmem(FLAGS_nvm_cache_path.c_str(), capacity, &vmp);

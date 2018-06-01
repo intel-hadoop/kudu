@@ -80,8 +80,6 @@ file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" KUDU_VERSION_NUMBER)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)
 
-# [yuqiang]
-set(CMAKE_VERBOSE_MAKEFILE ON) 
 set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build-support)
 set(THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 set(THIRDPARTY_INSTALL_DIR ${THIRDPARTY_DIR}/installed)
@@ -163,6 +161,8 @@ add_definitions(-DKUDU_HEADERS_USE_RICH_SLICE=1)
 # We don't want to use any stubs; that's exclusively for builds using our
 # exported client headers).
 add_definitions(-DKUDU_HEADERS_NO_STUBS=1)
+
+add_definitions(-DJE_PREFIX=jemk_)
 
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
@@ -1462,4 +1462,3 @@ add_subdirectory(src/kudu/tablet)
 add_subdirectory(src/kudu/tools)
 add_subdirectory(src/kudu/tserver)
 add_subdirectory(src/kudu/util)
-

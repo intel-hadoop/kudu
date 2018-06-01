@@ -17,8 +17,6 @@
 #ifndef KUDU_UTIL_NVM_CACHE_H_
 #define KUDU_UTIL_NVM_CACHE_H_
 
-#define KUDU_PMEM_MIN_SIZE (1024 * 1024 * 16)
-
 #include <cstddef>
 #include <string>
 
