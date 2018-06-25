@@ -162,6 +162,8 @@ add_definitions(-DKUDU_HEADERS_USE_RICH_SLICE=1)
 # exported client headers).
 add_definitions(-DKUDU_HEADERS_NO_STUBS=1)
 
+add_definitions(-DJE_PREFIX=jemk_)
+
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
@@ -446,6 +448,12 @@ endif()
 #
 # Any additional arguments are passed verbatim into the C++ compiler invocation.
 function(GET_GOLD_VERSION)
+
+  # disable ld.gold due some compilation issue for numa
+  if (NUMA_LIB_PATH)
+    return()
+  endif()
+
   # The gold linker is only for ELF binaries, which macOS doesn't use.
   if (APPLE)
     return()
@@ -1139,18 +1147,23 @@ endif()
 
 # Required pmem libraries
 if (NOT APPLE)
-find_package(Pmem REQUIRED)
-include_directories(${PMEM_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(vmem
-  STATIC_LIB "${VMEM_STATIC_LIB}"
-  SHARED_LIB "${VMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmem
-  STATIC_LIB "${PMEM_STATIC_LIB}"
-  SHARED_LIB "${PMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmemobj
-  STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
-  SHARED_LIB "${PMEMOBJ_SHARED_LIB}"
-  DEPS ${PMEMOBJ_DEPS})
+  find_package(Memkind REQUIRED)
+  include_directories(SYSTEM ${MEMKIND_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(memkind
+    STATIC_LIB "${MEMKIND_STATIC_LIB}"
+    SHARED_LIB "${MEMKIND_SHARED_LIB}")
+  list(APPEND KUDU_BASE_LIBS memkind)
+endif()
+
+## libnuma
+if (NOT APPLE)
+  find_library(NUMA_LIB_PATH numa)
+  if(NOT NUMA_LIB_PATH)
+    message(FATAL_ERROR "Could not find libnuma on the system path")
+  endif()
+  ADD_THIRDPARTY_LIB(numa
+    SHARED_LIB "${NUMA_LIB_PATH}")
+  list(APPEND KUDU_BASE_LIBS numa)
 endif()
 
 ## curl
