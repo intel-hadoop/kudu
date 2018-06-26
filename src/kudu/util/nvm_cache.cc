@@ -41,6 +41,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
@@ -195,7 +196,7 @@ class HandleTable {
 // A single shard of sharded cache.
 class NvmLRUCache {
  public:
-  explicit NvmLRUCache(memkind[] vmp);
+  explicit NvmLRUCache(std::vector<memkind_t> memkinds);
   ~NvmLRUCache();
 
   // Separate from constructor so caller can easily make an array of LRUCache
@@ -234,8 +235,7 @@ class NvmLRUCache {
   size_t capacity_;
   size_t pool_num_;
 
-  std::atomic<size_t> allocations_(0);
-  std::atomic_refcount
+  std::atomic<size_t> allocations_;
   // mutex_ protects the following state.
   MutexType mutex_;
   size_t usage_;
@@ -246,19 +246,20 @@ class NvmLRUCache {
 
   HandleTable table_;
 
-  memkind[] vmp_;
+  vector<memkind_t> memkinds_;
 
   CacheMetrics* metrics_;
 };
 
-NvmLRUCache::NvmLRUCache(memkind[] vmp)
+NvmLRUCache::NvmLRUCache(vector<memkind_t> memkinds)
   : usage_(0),
-  vmp_(vmp),
+    memkinds_(memkinds),
+    allocations_(0),
   metrics_(NULL) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
-  pool_num_ = sizeof(vmp_)
+  pool_num_ = memkinds.size();
 }
 
 NvmLRUCache::~NvmLRUCache() {
@@ -276,8 +277,7 @@ void* NvmLRUCache::VmemMalloc(size_t size) {
   if (PREDICT_FALSE(FLAGS_nvm_cache_simulate_allocation_failure)) {
     return NULL;
   }
-
-  return memkind_malloc(vmp[allocations_++ % pool_num_], size);
+  return memkind_malloc(memkinds_[allocations_ % pool_num_], size);
 }
 
 bool NvmLRUCache::Unref(LRUHandle* e) {
@@ -294,7 +294,9 @@ void NvmLRUCache::FreeEntry(LRUHandle* e) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
   }
-  memkind_free(vmp_, e);
+  for(const memkind_t memkind : memkinds_) {
+    memkind_free(memkind, e);
+  }
 }
 
 // Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
@@ -464,13 +466,12 @@ void NvmLRUCache::Erase(const Slice& key, uint32_t hash) {
 }
 static const int kNumShardBits = 4;
 static const int kNumShards = 1 << kNumShardBits;
-static const char* delimiters = ",";
 
 class ShardedLRUCache : public Cache {
  private:
   gscoped_ptr<CacheMetrics> metrics_;
   vector<NvmLRUCache*> shards_;
-  memkind* vmp_;
+  vector<memkind_t> memkinds_;
 
   static inline uint32_t HashSlice(const Slice& s) {
     return util_hash::CityHash64(
@@ -482,12 +483,11 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, memkind[] vmp)
-        : vmp_(vmp) {
-
+  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, vector<memkind_t> memkinds)
+        : memkinds_(memkinds) {
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
-      gscoped_ptr<NvmLRUCache> shard(new NvmLRUCache(vmp_));
+      gscoped_ptr<NvmLRUCache> shard(new NvmLRUCache(memkinds));
       shard->SetCapacity(per_shard);
       shards_.push_back(shard.release());
     }
@@ -498,7 +498,9 @@ class ShardedLRUCache : public Cache {
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
     // MEMKIND pool.
-     memkind_pmem_destroy(vmp_);
+    for(const memkind_t memkind : memkinds_) {
+      memkind_pmem_destroy(memkind);
+    }
   }
 
   virtual Handle* Insert(PendingHandle* handle,
@@ -548,8 +550,7 @@ class ShardedLRUCache : public Cache {
         handle->kv_data = &buf[sizeof(LRUHandle)];
         handle->val_length = val_len;
         handle->key_length = key_len;
-        // FIXME: MEMKIND API does not support the functionality as vmem_malloc_usable_size in NVML
-	    handle->charge = charge;
+	    handle->charge = (charge == kAutomaticCharge) ? jemk_malloc_usable_size(buf) : charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
         return reinterpret_cast<PendingHandle*>(handle);
@@ -560,24 +561,23 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual void Free(PendingHandle* ph) OVERRIDE {
-    memkind_free(vmp_, ph);
+    for(const memkind_t memkind : memkinds_) {
+      memkind_free(memkind, ph);
+    }
   }
 };
 
 } // end anonymous namespace
 
-void initialize_pmems(size_t capacity, memkind vmp[]) {
-  char* p = strtok(FLAGS_nvm_cache_paths, delimiters);
+void initialize_pmems(size_t capacity, std::vector<memkind_t> vmp) {
+  vector<string> cache_paths = strings::Split(FLAGS_nvm_cache_paths, ",", strings::SkipEmpty());
+  CHECK_GT(cache_paths.size(), 0) << "paths for nvm to allocate memory can not be empty";
 
-  vector<string> strList;
-  while(p!=NULL) {
-    strList->push_back(p);
-    p = strtok(FLAGS_nvm_cache_paths, delimiters);
-  }
-
-  for(unsigned int i = 0; i < strList.size(); i++){
+  for(const string& path : cache_paths) {
     // If we cannot create the cache pool we should not retry.
-    int err = memkind_create_pmem(strList[i], capacity/strList.size(), vmp[i]);
+    memkind_t temp_vmp;
+    int err = memkind_create_pmem(path.c_str(), capacity, &temp_vmp);
+    vmp.push_back(temp_vmp);
     PLOG_IF(FATAL, err) << "Could not initialize NVM cache library in paths "
                         << FLAGS_nvm_cache_paths.c_str();
   }
@@ -590,10 +590,10 @@ Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
     << "configured capacity " << capacity << " bytes is less than "
     << "the minimum capacity for an NVM cache: " << MEMKIND_PMEM_MIN_SIZE;
 
-  memkind vmp[];
-  initialize_pmems(capacity, &vmp);
+  vector<memkind_t> memkinds;
+  initialize_pmems(capacity, memkinds);
 
-  return new ShardedLRUCache(capacity, id, &vmp);
+  return new ShardedLRUCache(capacity, id, memkinds);
 }
 
 }  // namespace kudu
