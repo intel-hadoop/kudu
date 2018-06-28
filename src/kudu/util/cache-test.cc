@@ -27,7 +27,7 @@
 #include "kudu/util/test_util.h"
 
 #if defined(__linux__)
-DECLARE_string(nvm_cache_path);
+DECLARE_string(nvm_cache_paths);
 #endif // defined(__linux__)
 
 DECLARE_double(cache_memtracker_approximation_ratio);
@@ -66,9 +66,9 @@ class CacheTest : public KuduTest,
   virtual void SetUp() OVERRIDE {
 
 #if defined(__linux__)
-    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
-      FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
-      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
+    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_paths").is_default) {
+      FLAGS_nvm_cache_paths = GetTestPath("nvm-cache");
+      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_paths));
     }
 #endif // defined(__linux__)
 

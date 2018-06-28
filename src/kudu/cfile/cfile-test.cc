@@ -79,7 +79,7 @@ DECLARE_bool(cfile_write_checksums);
 DECLARE_bool(cfile_verify_checksums);
 
 #if defined(__linux__)
-DECLARE_string(nvm_cache_path);
+DECLARE_string(nvm_cache_paths);
 DECLARE_bool(nvm_cache_simulate_allocation_failure);
 #endif
 
@@ -399,9 +399,9 @@ class TestCFileBothCacheTypes : public TestCFile,
     // The NVM cache can run using any directory as its path -- it doesn't have
     // a lot of practical use outside of an actual NVM device, but for testing
     // purposes, we'll point it at our test dir, unless otherwise specified.
-    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
-      FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
-      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
+    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_paths").is_default) {
+      FLAGS_nvm_cache_paths = GetTestPath("nvm-cache");
+      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_paths));
     }
 #endif
     switch (GetParam()) {

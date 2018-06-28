@@ -41,6 +41,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
@@ -49,10 +50,10 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
 
-DEFINE_string(nvm_cache_path, "/vmem",
-              "The path at which the NVM cache will try to allocate its memory. "
-              "This can be a tmpfs or ramfs for testing purposes.");
-TAG_FLAG(nvm_cache_path, experimental);
+DEFINE_string(nvm_cache_paths, "/vmem",
+              "The paths at which the NVM cache will try to allocate its memory. "
+              "Multi-paths are allowed and seperated with comma. This can be a tmpfs or ramfs for testing purposes.");
+TAG_FLAG(nvm_cache_paths, experimental);
 
 DEFINE_int32(nvm_cache_allocation_retry_count, 10,
              "The number of times that the NVM cache will retry attempts to allocate "
@@ -195,7 +196,7 @@ class HandleTable {
 // A single shard of sharded cache.
 class NvmLRUCache {
  public:
-  explicit NvmLRUCache(memkind *vmp);
+  explicit NvmLRUCache(std::vector<memkind_t> memkinds);
   ~NvmLRUCache();
 
   // Separate from constructor so caller can easily make an array of LRUCache
@@ -232,7 +233,9 @@ class NvmLRUCache {
 
   // Initialized before use.
   size_t capacity_;
+  size_t pool_num_;
 
+  std::atomic<size_t> allocations_;
   // mutex_ protects the following state.
   MutexType mutex_;
   size_t usage_;
@@ -243,18 +246,20 @@ class NvmLRUCache {
 
   HandleTable table_;
 
-  memkind* vmp_;
+  vector<memkind_t> memkinds_;
 
   CacheMetrics* metrics_;
 };
 
-NvmLRUCache::NvmLRUCache(memkind* vmp)
+NvmLRUCache::NvmLRUCache(vector<memkind_t> memkinds)
   : usage_(0),
-  vmp_(vmp),
+    memkinds_(memkinds),
+    allocations_(0),
   metrics_(NULL) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
+  pool_num_ = memkinds.size();
 }
 
 NvmLRUCache::~NvmLRUCache() {
@@ -272,7 +277,7 @@ void* NvmLRUCache::VmemMalloc(size_t size) {
   if (PREDICT_FALSE(FLAGS_nvm_cache_simulate_allocation_failure)) {
     return NULL;
   }
-  return memkind_malloc(vmp_, size);
+  return memkind_malloc(memkinds_[allocations_ % pool_num_], size);
 }
 
 bool NvmLRUCache::Unref(LRUHandle* e) {
@@ -289,7 +294,9 @@ void NvmLRUCache::FreeEntry(LRUHandle* e) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
   }
-  memkind_free(vmp_, e);
+  for(const memkind_t memkind : memkinds_) {
+    memkind_free(memkind, e);
+  }
 }
 
 // Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
@@ -464,7 +471,7 @@ class ShardedLRUCache : public Cache {
  private:
   gscoped_ptr<CacheMetrics> metrics_;
   vector<NvmLRUCache*> shards_;
-  memkind* vmp_;
+  vector<memkind_t> memkinds_;
 
   static inline uint32_t HashSlice(const Slice& s) {
     return util_hash::CityHash64(
@@ -476,12 +483,11 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, memkind* vmp)
-        : vmp_(vmp) {
-
+  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, vector<memkind_t> memkinds)
+        : memkinds_(memkinds) {
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
-      gscoped_ptr<NvmLRUCache> shard(new NvmLRUCache(vmp_));
+      gscoped_ptr<NvmLRUCache> shard(new NvmLRUCache(memkinds));
       shard->SetCapacity(per_shard);
       shards_.push_back(shard.release());
     }
@@ -492,7 +498,9 @@ class ShardedLRUCache : public Cache {
     // Per the note at the top of this file, our cache is entirely volatile.
     // Hence, when the cache is destructed, we delete the underlying
     // MEMKIND pool.
-     memkind_pmem_destroy(vmp_);
+    for(const memkind_t memkind : memkinds_) {
+      memkind_pmem_destroy(memkind);
+    }
   }
 
   virtual Handle* Insert(PendingHandle* handle,
@@ -542,8 +550,7 @@ class ShardedLRUCache : public Cache {
         handle->kv_data = &buf[sizeof(LRUHandle)];
         handle->val_length = val_len;
         handle->key_length = key_len;
-        // FIXME: MEMKIND API does not support the functionality as vmem_malloc_usable_size in NVML
-	handle->charge = charge;
+	    handle->charge = (charge == kAutomaticCharge) ? jemk_malloc_usable_size(buf) : charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
         return reinterpret_cast<PendingHandle*>(handle);
@@ -554,11 +561,27 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual void Free(PendingHandle* ph) OVERRIDE {
-    memkind_free(vmp_, ph);
+    for(const memkind_t memkind : memkinds_) {
+      memkind_free(memkind, ph);
+    }
   }
 };
 
 } // end anonymous namespace
+
+void initialize_pmems(size_t capacity, std::vector<memkind_t>& memkinds) {
+  vector<string> cache_paths = strings::Split(FLAGS_nvm_cache_paths, ",", strings::SkipEmpty());
+  CHECK_GT(cache_paths.size(), 0) << "paths for nvm to allocate memory can not be empty";
+
+  for(const string& path : cache_paths) {
+    // If we cannot create the cache pool we should not retry.
+    memkind_t temp_memkind;
+    int err = memkind_create_pmem(path.c_str(), capacity, &temp_memkind);
+    memkinds.push_back(temp_memkind);
+    PLOG_IF(FATAL, err) << "Could not initialize NVM cache library in paths "
+                        << FLAGS_nvm_cache_paths.c_str();
+  }
+}
 
 Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
   // vmem_create() will fail if the capacity is too small, but with
@@ -566,14 +589,11 @@ Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
   CHECK_GE(capacity, MEMKIND_PMEM_MIN_SIZE)
     << "configured capacity " << capacity << " bytes is less than "
     << "the minimum capacity for an NVM cache: " << MEMKIND_PMEM_MIN_SIZE;
-  
-  memkind* vmp;
-  int err = memkind_create_pmem(FLAGS_nvm_cache_path.c_str(), capacity, &vmp);
-  // If we cannot create the cache pool we should not retry.
-  PLOG_IF(FATAL, err) << "Could not initialize NVM cache library in path "
-                              << FLAGS_nvm_cache_path.c_str();
 
-  return new ShardedLRUCache(capacity, id, vmp);
+  vector<memkind_t> memkinds;
+  initialize_pmems(capacity, memkinds);
+
+  return new ShardedLRUCache(capacity, id, memkinds);
 }
 
 }  // namespace kudu

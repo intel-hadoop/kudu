@@ -74,6 +74,10 @@ Cache* CreateCache(int64_t capacity) {
 // Validates the block cache capacity won't permit the cache to grow large enough
 // to cause pernicious flushing behavior. See KUDU-2318.
 bool ValidateBlockCacheCapacity() {
+  if (FLAGS_block_cache_type == "NVM") {
+    return true;
+  }
+
   if (FLAGS_force_block_cache_capacity) {
     return true;
   }

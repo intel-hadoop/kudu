@@ -747,9 +747,9 @@ build_memkind() {
   # the MEMKIND libraries, even though we only need the three libraries above.
   # So, we manually install the built artifacts.
   cp $MEMKIND_SOURCE/jemalloc/obj/include/jemalloc/jemalloc.h $PREFIX/include/jemalloc
-  cp $MEMKIND_BDIR/include/memkind/internal/* $PREFIX/include/memkind/internal
-  cp $MEMKIND_BDIR/include/memkind.h $PREFIX/include
-  cp $MEMKIND_BDIR/.libs/* $PREFIX/lib
+  cp -r $MEMKIND_BDIR/include/memkind/internal/* $PREFIX/include/memkind/internal
+  cp -r $MEMKIND_BDIR/include/* $PREFIX/include
+  cp -r $MEMKIND_BDIR/.libs/* $PREFIX/lib
   popd
 }
 
