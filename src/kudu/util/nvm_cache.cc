@@ -569,15 +569,15 @@ class ShardedLRUCache : public Cache {
 
 } // end anonymous namespace
 
-void initialize_pmems(size_t capacity, std::vector<memkind_t> vmp) {
+void initialize_pmems(size_t capacity, std::vector<memkind_t>& memkinds) {
   vector<string> cache_paths = strings::Split(FLAGS_nvm_cache_paths, ",", strings::SkipEmpty());
   CHECK_GT(cache_paths.size(), 0) << "paths for nvm to allocate memory can not be empty";
 
   for(const string& path : cache_paths) {
     // If we cannot create the cache pool we should not retry.
-    memkind_t temp_vmp;
-    int err = memkind_create_pmem(path.c_str(), capacity, &temp_vmp);
-    vmp.push_back(temp_vmp);
+    memkind_t temp_memkind;
+    int err = memkind_create_pmem(path.c_str(), capacity, &temp_memkind);
+    memkinds.push_back(temp_memkind);
     PLOG_IF(FATAL, err) << "Could not initialize NVM cache library in paths "
                         << FLAGS_nvm_cache_paths.c_str();
   }
